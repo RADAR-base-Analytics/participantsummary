@@ -19,10 +19,73 @@ class ParticipantSummaryActiveData(FeatureGroup):
         return data
 
 
+class MedicationTimeline(Feature):
+    def __init__(self):
+        self.name = "MedicationTimeline"
+        self.description = "Medication Timeline"
+        self.required_input_data = ["questionnaire_adhd_medication_use_daily", "questionnaire_response/ADHDDailyMedicationUse"]
+
+    def preprocess(self, data):
+        return data
+
+    def flatten_dict(self, row):
+        key_value_dicts = {}
+        num_indx = 0
+        while f'value.answers.{num_indx}.questionId' in row and row[f'value.answers.{num_indx}.questionId'] is not None:
+            key_value_dicts.update(dict(zip([row[f'value.answers.{num_indx}.questionId']], [row[f'value.answers.{num_indx}.value']])))
+            num_indx += 1
+        return key_value_dicts
+
+    def get_first_medication_date(self, row):
+        med_rows = row[row['meduse_1'] == 1].reset_index(drop=True)
+        return med_rows[['value.time','meduse_1', 'meduse_2a_1',  'meduse_2a_1o', 'meduse_2b_1', 'meduse_2d_1']]
+
+    def calculate(self, data) -> pd.DataFrame:
+        medication_df = data.get_variable_data("questionnaire_adhd_medication_use_daily")
+        medication_df = pd.concat([medication_df, data.get_variable_data("questionnaire_response/ADHDDailyMedicationUse")], axis=0)
+        medication_df = medication_df.sort_values(by=['key.userId', 'value.time']).reset_index(drop=True)
+        medication_df['json_value_pair'] = medication_df.apply(self.flatten_dict, axis=1)
+        medication_df = medication_df[['key.projectId', 'key.userId', 'value.time', 'value.timeCompleted', 'json_value_pair']]
+        medication_df_final = pd.concat([medication_df, pd.json_normalize(medication_df['json_value_pair'])], axis=1)
+        df_medication_summary = medication_df_final.groupby('key.userId').apply(get_first_medication_date)
+        df_medication_summary = df_medication_summary.reset_index(inplace=True)
+        return df_medication_summary
+
 class NumberOfQuestionnaireComplete(Feature):
     def __init__(self):
         self.name = "NumberOfQuestionnaireComplete"
         self.description = "Number of Questionnaires Completed"
+
+        # List of questionnaire variables in questionnaire response
+        self.questionnaire_response_variables = [
+            "questionnaire_response/ADHDMedicationUseSideEffects",
+            "questionnaire_response/WeightAndWaistCircumference",
+            "questionnaire_response/BloodPressureMeasurement",
+            "questionnaire_response/FND",
+            "questionnaire_response/Audit",
+            "questionnaire_response/MediterraneanDietAdherence",
+            "questionnaire_response/RPQ-A",
+            "questionnaire_response/ADHDDailyMedicationUse",
+            "questionnaire_response/ARI_SELF",
+            "questionnaire_response/PHQ8",
+            "questionnaire_response/GAD7",
+            "questionnaire_response/BAARS-IV",
+        ]
+        self.variable_mapping = {
+            "questionnaire_response/ADHDMedicationUseSideEffects": "questionnaire_adhd_medication_side_effects",
+            "questionnaire_response/WeightAndWaistCircumference": "questionnaire_weight_and_waist_circumference",
+            "questionnaire_response/BloodPressureMeasurement": "questionnaire_blood_pressure_measurement",
+            "questionnaire_response/FND": "questionnaire_fnd",
+            "questionnaire_response/Audit": "questionnaire_audit",
+            "questionnaire_response/MediterraneanDietAdherence": "questionnaire_mediterranean_diet_adherence",
+            "questionnaire_response/RPQ-A": "questionnaire_rpq_a",
+            "questionnaire_response/ADHDDailyMedicationUse": "questionnaire_adhd_medication_use_daily",
+            "questionnaire_response/ARI_SELF": "questionnaire_ari_self",
+            "questionnaire_response/PHQ8": "questionnaire_adhd_phq8",
+            "questionnaire_response/GAD7": "questionnaire_gad7",
+            "questionnaire_response/BAARS-IV": "questionnaire_baars_iv"
+        }
+
         self.required_input_data = [
             "questionnaire_adhd_medication_use_daily",
             "questionnaire_baars_iv",
@@ -33,44 +96,70 @@ class NumberOfQuestionnaireComplete(Feature):
             "questionnaire_audit",
             "questionnaire_mediterranean_diet_adherence",
             "questionnaire_adhd_phq8",
-            "questionnaire_gad7"]
+            "questionnaire_gad7",
+            "questionnaire_rpq_a"] + self.questionnaire_response_variables
 
     def preprocess(self, data):
         questionnaire_dict = {}
-        for variable in self.required_input_data:
-            questionnaire_dict[variable] = data.get_variable_data(variable)
+        questionnaire_data = data.get_combined_data_by_variable(
+            self.required_input_data,
+            return_dict=True
+        )
+        questionnaire_dict = {}
+        for variable in self.variable_mapping:
+            if self.variable_mapping[variable] in questionnaire_data and variable in questionnaire_data:
+                questionnaire_dict[self.variable_mapping[variable]] = pd.concat(
+                    [questionnaire_data[self.variable_mapping[variable]],
+                     questionnaire_data[variable]], axis=0)
+            elif variable in questionnaire_data:
+                questionnaire_dict[self.variable_mapping[variable] ] = questionnaire_data[variable]
+            elif self.variable_mapping[variable] in questionnaire_data:
+                questionnaire_dict[self.variable_mapping[variable]] = questionnaire_data[
+                    self.variable_mapping[variable]]
+            else:
+                questionnaire_dict[variable] = pd.DataFrame()
         return questionnaire_dict
-
 
     def calculate(self, questionnaire_dict) -> pd.DataFrame:
         """
         Calculate the number of questionnaires completed.
         """
         questionnaire_count_dfs = []
-        for variable in self.required_input_data:
+        for var in self.variable_mapping:
+            variable = self.variable_mapping[var]
+            if variable not in questionnaire_dict:
+                continue
             p = questionnaire_dict[variable][['key.projectId',
-                                              'key.userId']].groupby('key.userId').count().reset_index()
-            p.rename({'key.projectId':f"{variable}_count"}, axis=1, inplace=True)
+                                              'key.userId']].groupby(
+                                                  'key.userId'
+                                                  ).count().reset_index()
+            p.rename({'key.projectId': f"{variable}_count"}, axis=1,
+                     inplace=True)
             questionnaire_count_dfs.append(p)
         dfs = [df.set_index('key.userId') for df in questionnaire_count_dfs]
-        return pd.concat(dfs, axis=1)
+        return pd.concat(dfs, axis=1).reset_index().reset_index()
 
 
 class NumOfDifferentTypesOfMedication(Feature):
     def __init__(self):
         self.name = "NumOfDifferentTypesOfMedication"
         self.description = "Number of Different Types of Medication"
-        self.required_input_data = ["questionnaire_adhd_medication_use_daily"]
-
+        self.required_input_data = ["questionnaire_adhd_medication_use_daily", "questionnaire_response/ADHDDailyMedicationUse"]
 
     def preprocess(self, data):
         return data
 
     def calculate(self, data) -> pd.DataFrame:
-        ques_df = data.get_variable_data("questionnaire_adhd_medication_use_daily")
+        ques_dfs = data.get_variable_data(self.required_input_data)
+        # concat
+        ques_df = pd.concat(ques_dfs, axis=0)
+        ques_df.reset_index(drop=True, inplace=True)
+        # filter out rows where 'value.answers.5.value' is NaN
         ques_df = ques_df.dropna(subset=['value.answers.5.value'])
-        ques_df_unq = ques_df.groupby('key.userId')['value.answers.5.value'].unique().reset_index()
-        ques_df_unq['unique_medications'] = ques_df_unq['value.answers.5.value'].apply(lambda x: len(x))
+        ques_df_unq = ques_df.groupby('key.userId')[
+            'value.answers.5.value'].unique().reset_index()
+        ques_df_unq['unique_medications'] = ques_df_unq[
+            'value.answers.5.value'].apply(lambda x: len(x))
         return ques_df_unq
 
 
@@ -78,14 +167,14 @@ class BAARSSymptomsSummary(Feature):
     def __init__(self):
         self.name = "BAARSSymptomsSummary"
         self.description = "Summary of BAARS Symptoms"
-        self.required_input_data = ["questionnaire_baars_iv"]
-
+        self.required_input_data = ["questionnaire_baars_iv", "questionnaire_response/BAARS-IV"]
 
     def preprocess(self, data):
         return data
 
     def calculate(self, data) -> pd.DataFrame:
-        baars_df = data.get_variable_data("questionnaire_baars_iv")
+        baars_dfs = data.get_variable_data(self.required_input_data)
+        baars_df = pd.concat(baars_dfs, axis=0)
         return baars_df
 
 
@@ -93,13 +182,14 @@ class PHQ8SymptomsSummary(Feature):
     def __init__(self):
         self.name = "PHQ8SymptomsSummary"
         self.description = "Summary of PHQ-8 Symptoms"
-        self.required_input_data = ["questionnaire_adhd_phq8"]
+        self.required_input_data = ["questionnaire_adhd_phq8", "questionnaire_response/PHQ8"]
 
     def preprocess(self, data):
         return data
 
     def calculate(self, data) -> pd.DataFrame:
-        phq8_df = data.get_variable_data("questionnaire_adhd_phq8")
+        phq8_dfs = data.get_variable_data(self.required_input_data)
+        phq8_df = pd.concat(phq8_dfs, axis=0)
         return phq8_df
 
 
@@ -107,13 +197,14 @@ class BloodPressureSummary(Feature):
     def __init__(self):
         self.name = "BloodPressureSummary"
         self.description = "Summary of Blood Pressure"
-        self.required_input_data = ["questionnaire_blood_pressure_measurement"]
+        self.required_input_data = ["questionnaire_blood_pressure_measurement", "questionnaire_response/BloodPressureMeasurement"]
 
     def preprocess(self, data):
         return data
 
     def calculate(self, data) -> pd.DataFrame:
-        bp_df = data.get_variable_data("questionnaire_blood_pressure_measurement")
+        bp_dfs = data.get_variable_data(self.required_input_data)
+        bp_df = pd.concat(bp_dfs, axis=0)
         return bp_df
 
 
@@ -199,5 +290,5 @@ class NumberOfDifferentAppsUsed(Feature):
         df_unique_apps = df.groupby('key.userId')[
             'value.packageName'].nunique().reset_index()
         df_unique_apps = df_unique_apps.rename(
-            columns={"value.packageName": "num_unique_apps"}, axis=1)
+            columns={"value.packageName": "num_unique_apps"})
         return df_unique_apps
