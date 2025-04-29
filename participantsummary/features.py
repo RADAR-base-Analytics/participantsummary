@@ -9,7 +9,7 @@ class ParticipantSummaryActiveData(FeatureGroup):
         features = [NumberOfQuestionnaireComplete,
                     NumOfDifferentTypesOfMedication,
                     BAARSSymptomsSummary, PHQ8SymptomsSummary,
-                    BloodPressureSummary]
+                    BloodPressureSummary, MedicationTimeline]
         super().__init__(name, description, features)
 
     def preprocess(self, data):
@@ -41,13 +41,13 @@ class MedicationTimeline(Feature):
         return med_rows[['value.time','meduse_1', 'meduse_2a_1',  'meduse_2a_1o', 'meduse_2b_1', 'meduse_2d_1']]
 
     def calculate(self, data) -> pd.DataFrame:
-        medication_df = data.get_variable_data("questionnaire_adhd_medication_use_daily")
-        medication_df = pd.concat([medication_df, data.get_variable_data("questionnaire_response/ADHDDailyMedicationUse")], axis=0)
+        medication_dfs = data.get_variable_data(self.required_input_data)
+        medication_df = pd.concat(medication_dfs, axis=0).reset_index(drop=True)
         medication_df = medication_df.sort_values(by=['key.userId', 'value.time']).reset_index(drop=True)
         medication_df['json_value_pair'] = medication_df.apply(self.flatten_dict, axis=1)
         medication_df = medication_df[['key.projectId', 'key.userId', 'value.time', 'value.timeCompleted', 'json_value_pair']]
         medication_df_final = pd.concat([medication_df, pd.json_normalize(medication_df['json_value_pair'])], axis=1)
-        df_medication_summary = medication_df_final.groupby('key.userId').apply(get_first_medication_date)
+        df_medication_summary = medication_df_final.groupby('key.userId').apply(self.get_first_medication_date)
         df_medication_summary = df_medication_summary.reset_index(inplace=True)
         return df_medication_summary
 
