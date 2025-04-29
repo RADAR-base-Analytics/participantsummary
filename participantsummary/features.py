@@ -48,7 +48,7 @@ class MedicationTimeline(Feature):
         medication_df = medication_df[['key.projectId', 'key.userId', 'value.time', 'value.timeCompleted', 'json_value_pair']]
         medication_df_final = pd.concat([medication_df, pd.json_normalize(medication_df['json_value_pair'])], axis=1)
         df_medication_summary = medication_df_final.groupby('key.userId').apply(self.get_first_medication_date)
-        df_medication_summary = df_medication_summary.reset_index(inplace=True)
+        df_medication_summary.reset_index(inplace=True)
         return df_medication_summary
 
 class NumberOfQuestionnaireComplete(Feature):
