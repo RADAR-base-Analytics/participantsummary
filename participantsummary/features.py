@@ -146,20 +146,40 @@ class NumOfDifferentTypesOfMedication(Feature):
         self.description = "Number of Different Types of Medication"
         self.required_input_data = ["questionnaire_adhd_medication_use_daily", "questionnaire_response/ADHDDailyMedicationUse"]
 
+    def flatten_dict(self, row):
+        key_value_dicts = {}
+        num_indx = 0
+        while f'value.answers.{num_indx}.questionId' in row and row[f'value.answers.{num_indx}.questionId'] is not None:
+            key_value_dicts.update(dict(zip([row[f'value.answers.{num_indx}.questionId']], [row[f'value.answers.{num_indx}.value']])))
+            num_indx += 1
+        return key_value_dicts
+
+    def flatten_df(self, df):
+        # Flatten the DataFrame
+        df['json_value_pair'] = df.apply(self.flatten_dict, axis=1)
+        df = df[['key.projectId', 'key.userId', 'value.time',
+                 'value.timeCompleted', 'json_value_pair']]
+        df = pd.concat([df, pd.json_normalize(df['json_value_pair'])], axis=1)
+        df.drop(columns=['json_value_pair'], inplace=True)
+        return df
+
     def preprocess(self, data):
         return data
 
     def calculate(self, data) -> pd.DataFrame:
         ques_dfs = data.get_variable_data(self.required_input_data)
         # concat
+        for i, ques_df in enumerate(ques_dfs):
+            # flatten the DataFrame
+            ques_dfs[i] = self.flatten_df(ques_df)
         ques_df = pd.concat(ques_dfs, axis=0)
         ques_df.reset_index(drop=True, inplace=True)
         # filter out rows where 'value.answers.5.value' is NaN
-        ques_df = ques_df.dropna(subset=['value.answers.5.value'])
+        ques_df = ques_df.dropna(subset=['meduse_2a_1'])
         ques_df_unq = ques_df.groupby('key.userId')[
-            'value.answers.5.value'].unique().reset_index()
+            'meduse_2a_1'].unique().reset_index()
         ques_df_unq['unique_medications'] = ques_df_unq[
-            'value.answers.5.value'].apply(lambda x: len(x))
+            'meduse_2a_1'].apply(lambda x: len(x))
         return ques_df_unq
 
 
@@ -169,11 +189,31 @@ class BAARSSymptomsSummary(Feature):
         self.description = "Summary of BAARS Symptoms"
         self.required_input_data = ["questionnaire_baars_iv", "questionnaire_response/BAARS-IV"]
 
+    def flatten_dict(self, row):
+        key_value_dicts = {}
+        num_indx = 0
+        while f'value.answers.{num_indx}.questionId' in row and row[f'value.answers.{num_indx}.questionId'] is not None:
+            key_value_dicts.update(dict(zip([row[f'value.answers.{num_indx}.questionId']], [row[f'value.answers.{num_indx}.value']])))
+            num_indx += 1
+        return key_value_dicts
+
+    def flatten_df(self, df):
+        # Flatten the DataFrame
+        df['json_value_pair'] = df.apply(self.flatten_dict, axis=1)
+        df = df[['key.projectId', 'key.userId', 'value.time',
+                 'value.timeCompleted', 'json_value_pair']]
+        df = pd.concat([df, pd.json_normalize(df['json_value_pair'])], axis=1)
+        df.drop(columns=['json_value_pair'], inplace=True)
+        return df
+
     def preprocess(self, data):
         return data
 
     def calculate(self, data) -> pd.DataFrame:
         baars_dfs = data.get_variable_data(self.required_input_data)
+        # flatten the DataFrame
+        for i, baars_df in enumerate(baars_dfs):
+            baars_dfs[i] = self.flatten_df(baars_df)
         baars_df = pd.concat(baars_dfs, axis=0)
         return baars_df
 
@@ -184,11 +224,31 @@ class PHQ8SymptomsSummary(Feature):
         self.description = "Summary of PHQ-8 Symptoms"
         self.required_input_data = ["questionnaire_adhd_phq8", "questionnaire_response/PHQ8"]
 
+    def flatten_dict(self, row):
+        key_value_dicts = {}
+        num_indx = 0
+        while f'value.answers.{num_indx}.questionId' in row and row[f'value.answers.{num_indx}.questionId'] is not None:
+            key_value_dicts.update(dict(zip([row[f'value.answers.{num_indx}.questionId']], [row[f'value.answers.{num_indx}.value']])))
+            num_indx += 1
+        return key_value_dicts
+
+    def flatten_df(self, df):
+        # Flatten the DataFrame
+        df['json_value_pair'] = df.apply(self.flatten_dict, axis=1)
+        df = df[['key.projectId', 'key.userId', 'value.time',
+                 'value.timeCompleted', 'json_value_pair']]
+        df = pd.concat([df, pd.json_normalize(df['json_value_pair'])], axis=1)
+        df.drop(columns=['json_value_pair'], inplace=True)
+        return df
+
     def preprocess(self, data):
         return data
 
     def calculate(self, data) -> pd.DataFrame:
         phq8_dfs = data.get_variable_data(self.required_input_data)
+        # flatten the DataFrame
+        for i, phq8_df in enumerate(phq8_dfs):
+            phq8_dfs[i] = self.flatten_df(phq8_df)
         phq8_df = pd.concat(phq8_dfs, axis=0)
         return phq8_df
 
@@ -199,11 +259,31 @@ class BloodPressureSummary(Feature):
         self.description = "Summary of Blood Pressure"
         self.required_input_data = ["questionnaire_blood_pressure_measurement", "questionnaire_response/BloodPressureMeasurement"]
 
+    def flatten_dict(self, row):
+        key_value_dicts = {}
+        num_indx = 0
+        while f'value.answers.{num_indx}.questionId' in row and row[f'value.answers.{num_indx}.questionId'] is not None:
+            key_value_dicts.update(dict(zip([row[f'value.answers.{num_indx}.questionId']], [row[f'value.answers.{num_indx}.value']])))
+            num_indx += 1
+        return key_value_dicts
+
+    def flatten_df(self, df):
+        # Flatten the DataFrame
+        df['json_value_pair'] = df.apply(self.flatten_dict, axis=1)
+        df = df[['key.projectId', 'key.userId', 'value.time',
+                 'value.timeCompleted', 'json_value_pair']]
+        df = pd.concat([df, pd.json_normalize(df['json_value_pair'])], axis=1)
+        df.drop(columns=['json_value_pair'], inplace=True)
+        return df
+
     def preprocess(self, data):
         return data
 
     def calculate(self, data) -> pd.DataFrame:
         bp_dfs = data.get_variable_data(self.required_input_data)
+        # flatten the DataFrame
+        for i, bp_df in enumerate(bp_dfs):
+            bp_dfs[i] = self.flatten_df(bp_df)
         bp_df = pd.concat(bp_dfs, axis=0)
         return bp_df
 
